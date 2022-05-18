@@ -10,6 +10,12 @@ import kotlin.reflect.full.hasAnnotation
 annotation class XmlName(val name: String)
 
 @Target(AnnotationTarget.PROPERTY)
+annotation class XmlAttribute
+
+@Target(AnnotationTarget.CLASS)
+annotation class XmlString
+
+@Target(AnnotationTarget.PROPERTY)
 annotation class XmlIgnore
 
 class XmlGenerator {
@@ -48,7 +54,7 @@ class XmlGenerator {
 
             fun processObject(o: Any, parent: XmlEntity) {
 
-                if (primitiveTypes.contains(o::class)) {
+                if (o::class.hasAnnotation<XmlString>() || primitiveTypes.contains(o::class)) {
                     parent.appendChild(XmlText(o.toString()))
 
                 } else if (o is Iterable<*>) {
@@ -76,13 +82,17 @@ class XmlGenerator {
                     o::class.declaredMemberProperties.forEach { p ->
                         if (! p.hasAnnotation<XmlIgnore>()) {
                             p.call(o)?.let {
-                                val propertyEntity = XmlEntity(retrievePropertyName(p))
-                                try {
-                                    processObject(it, propertyEntity)
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                } finally {
-                                    parent.appendChild(propertyEntity)
+                                if (p.hasAnnotation<XmlAttribute>()) {
+                                    parent.appendAttribute(retrievePropertyName(p), it.toString())
+                                } else {
+                                    val propertyEntity = XmlEntity(retrievePropertyName(p))
+                                    try {
+                                        processObject(it, propertyEntity)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    } finally {
+                                        parent.appendChild(propertyEntity)
+                                    }
                                 }
                             }
                         }
