@@ -29,7 +29,7 @@ class XmlGenerator {
                 else
                     c.simpleName
             if (name == null)
-                throw Exception("Class does not have a name.")
+                throw Exception("Given class does not have a name.")
             return name
         }
 
@@ -40,7 +40,7 @@ class XmlGenerator {
                 else
                     p.name
             if (name == null)
-                throw Exception("Property does not have a name.")
+                throw Exception("Given property does not have a name.")
             return name
         }
 
@@ -53,7 +53,7 @@ class XmlGenerator {
 
                 } else if (o is Iterable<*>) {
                     o.filterNotNull().forEach { item ->
-                        val itemEntity = XmlEntity("item")
+                        val itemEntity = XmlEntity(retrieveClassName(item::class))
                         processObject(item, itemEntity)
                         parent.appendChild(itemEntity)
                     }
@@ -61,11 +61,11 @@ class XmlGenerator {
                 } else if (o is Map<*, *>) {
                     o.forEach { (key, value) ->
                         if (key != null && value != null) {
-                            val keyEntity = XmlEntity("key")
+                            val keyEntity = XmlEntity(retrieveClassName(key::class))
                             processObject(key, keyEntity)
-                            val valueEntity = XmlEntity("value")
+                            val valueEntity = XmlEntity(retrieveClassName(value::class))
                             processObject(value, valueEntity)
-                            val entryEntity = XmlEntity("entry")
+                            val entryEntity = XmlEntity("Pair")
                             entryEntity.appendChild(keyEntity)
                             entryEntity.appendChild(valueEntity)
                             parent.appendChild(entryEntity)
@@ -73,17 +73,21 @@ class XmlGenerator {
                     }
 
                 } else {
-                    o::class.declaredMemberProperties.filterNotNull().forEach { p ->
+                    o::class.declaredMemberProperties.forEach { p ->
                         if (! p.hasAnnotation<XmlIgnore>()) {
                             p.call(o)?.let {
                                 val propertyEntity = XmlEntity(retrievePropertyName(p))
-                                processObject(it, propertyEntity)
-                                parent.appendChild(propertyEntity)
+                                try {
+                                    processObject(it, propertyEntity)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                } finally {
+                                    parent.appendChild(propertyEntity)
+                                }
                             }
                         }
                     }
                 }
-
             }
 
             val root = XmlEntity(name)
