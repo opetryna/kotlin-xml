@@ -57,7 +57,7 @@ class XmlGenerator {
                 if (o::class.hasAnnotation<XmlString>() || primitiveTypes.contains(o::class)) {
                     parent.appendChild(XmlText(o.toString()))
 
-                } else if (o is Iterable<*>) {
+                } else if (o is Collection<*>) {
                     o.filterNotNull().forEach { item ->
                         val itemEntity = XmlEntity(retrieveClassName(item::class))
                         processObject(item, itemEntity)
@@ -86,13 +86,8 @@ class XmlGenerator {
                                     parent.appendAttribute(retrievePropertyName(p), it.toString())
                                 } else {
                                     val propertyEntity = XmlEntity(retrievePropertyName(p))
-                                    try {
-                                        processObject(it, propertyEntity)
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    } finally {
-                                        parent.appendChild(propertyEntity)
-                                    }
+                                    processObject(it, propertyEntity)
+                                    parent.appendChild(propertyEntity)
                                 }
                             }
                         }
