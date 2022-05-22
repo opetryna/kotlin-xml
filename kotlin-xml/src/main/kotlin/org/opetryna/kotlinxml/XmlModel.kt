@@ -52,13 +52,20 @@ abstract class XmlNode {
 
 }
 
-class XmlText(value: String) : XmlNode() {
+class XmlText(value: String) : XmlNode(), IObservable<XmlText.Event> {
+
+    interface Event {
+        fun valueChanged()
+    }
+
+    override val observers: MutableList<Event> = mutableListOf()
 
     constructor(src: XmlText) : this(src.value)
 
     var value: String = validateName(value)
         set(value) {
             field = validateName(value)
+            notifyObservers { it.valueChanged() }
         }
 
     override fun accept(v: XmlVisitor) {
@@ -67,7 +74,17 @@ class XmlText(value: String) : XmlNode() {
 
 }
 
-class XmlEntity(name: String) : XmlNode() {
+class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event> {
+
+    interface Event {
+        fun nameChanged()
+        fun attributeAppended(attribute: String)
+        fun attributeRemoved(attribute: String)
+        fun childAppended(child: XmlNode)
+        fun childRemoved(child: XmlNode)
+    }
+
+    override val observers: MutableList<XmlEntity.Event> = mutableListOf()
 
     constructor(src: XmlEntity) : this(src.name) {
         src.attributes.forEach { (key, value) -> this.appendAttribute(key, value) }
@@ -76,6 +93,7 @@ class XmlEntity(name: String) : XmlNode() {
     var name: String = validateName(name)
         set(name) {
             field = validateName(name)
+            notifyObservers { it.nameChanged() }
         }
 
     private val _attributes: MutableMap<String, String> = mutableMapOf()
@@ -88,21 +106,25 @@ class XmlEntity(name: String) : XmlNode() {
 
     fun appendAttribute(name: String, value: String) {
         this._attributes[validateName(name)] = value
+        notifyObservers { it.attributeAppended(name) }
     }
 
     fun removeAttribute(name: String) {
         this._attributes.remove(name)
+        notifyObservers { it.attributeRemoved(name) }
     }
 
     fun appendChild(node: XmlNode) {
         node.parent?.removeChild(node)
         node.parent = this
         this._children.add(node)
+        notifyObservers { it.childAppended(node) }
     }
 
     fun removeChild(node: XmlNode) {
         this._children.remove(node)
         node.parent = null
+        notifyObservers { it.childRemoved(node) }
     }
 
     override fun accept(v: XmlVisitor) {
