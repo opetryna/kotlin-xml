@@ -100,6 +100,50 @@ class XmlGenerator {
             return root
         }
 
+        fun filter(src: XmlEntity, accept: (XmlNode) -> Boolean): XmlEntity? {
+
+            val v = object : XmlVisitor {
+
+                var root: XmlEntity? = null
+                var current: XmlEntity? = null
+                val accepted: ArrayDeque<Boolean> = ArrayDeque()
+
+                override fun visit(e: XmlText) {
+                    if (accept(e)) {
+                        val copy = XmlText(e)
+                        current?.appendChild(copy)
+                    }
+                }
+
+                override fun visit(e: XmlEntity): Boolean {
+                    val copy = XmlEntity(e)
+                    if (root == null) {
+                        root = copy
+                    }
+                    accepted.addLast(accept(e))
+                    current?.appendChild(copy)
+                    current = copy
+                    return true
+                }
+
+                override fun endVisit(e: XmlEntity) {
+                    val parent = current?.parent ?: root
+                    if (! accepted.removeLast() && current?.children?.isEmpty()!!) {
+                        if (current == root)
+                            root = null
+                        else
+                            parent?.removeChild(current!!)
+
+                    }
+                    current = parent
+                }
+
+            }
+
+            src.accept(v)
+            return v.root
+        }
+
     }
 
 }
