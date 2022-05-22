@@ -54,6 +54,8 @@ abstract class XmlNode {
 
 class XmlText(value: String) : XmlNode() {
 
+    constructor(src: XmlText) : this(src.value)
+
     var value: String = validateName(value)
         set(value) {
             field = validateName(value)
@@ -66,6 +68,10 @@ class XmlText(value: String) : XmlNode() {
 }
 
 class XmlEntity(name: String) : XmlNode() {
+
+    constructor(src: XmlEntity) : this(src.name) {
+        src.attributes.forEach { (key, value) -> this.appendAttribute(key, value) }
+    }
 
     var name: String = validateName(name)
         set(name) {
