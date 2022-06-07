@@ -1,5 +1,7 @@
 package org.opetryna.kotlinxml
 
+import java.io.IOException
+
 private fun validateName(s: String): String {
     val result = s.trim()
     if (result.isBlank())
@@ -21,7 +23,7 @@ interface XmlVisitor {
     fun endVisit(e: XmlEntity) {}
 }
 
-abstract class XmlNode {
+abstract class XmlNode : java.io.Serializable {
 
     var parent: XmlEntity? = null
         internal set
@@ -52,13 +54,13 @@ abstract class XmlNode {
 
 }
 
-class XmlText(value: String) : XmlNode(), IObservable<XmlText.Event> {
+class XmlText(value: String) : XmlNode(), IObservable<XmlText.Event>, java.io.Serializable {
 
     interface Event {
         fun valueChanged()
     }
 
-    override val observers: MutableList<Event> = mutableListOf()
+    @Transient override var observers: MutableList<Event> = mutableListOf()
 
     constructor(src: XmlText) : this(src.value)
 
@@ -72,9 +74,15 @@ class XmlText(value: String) : XmlNode(), IObservable<XmlText.Event> {
         v.visit(this)
     }
 
+    @Throws(IOException::class, ClassNotFoundException::class)
+    private fun readObject(inStream: java.io.ObjectInputStream) {
+        inStream.defaultReadObject()
+        observers = mutableListOf()
+    }
+
 }
 
-class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event> {
+class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event>, java.io.Serializable {
 
     interface Event {
         fun nameChanged()
@@ -84,7 +92,7 @@ class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event> {
         fun childRemoved(child: XmlNode)
     }
 
-    override val observers: MutableList<XmlEntity.Event> = mutableListOf()
+    @Transient override var observers: MutableList<XmlEntity.Event> = mutableListOf()
 
     constructor(src: XmlEntity) : this(src.name) {
         src.attributes.forEach { (key, value) -> this.appendAttribute(key, value) }
@@ -136,9 +144,15 @@ class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event> {
         v.endVisit(this)
     }
 
+    @Throws(IOException::class, ClassNotFoundException::class)
+    private fun readObject(inStream: java.io.ObjectInputStream) {
+        inStream.defaultReadObject()
+        observers = mutableListOf()
+    }
+
 }
 
-class XmlDocument(val root: XmlEntity) {
+class XmlDocument(val root: XmlEntity) : java.io.Serializable {
 
     fun serialize(): String {
 
