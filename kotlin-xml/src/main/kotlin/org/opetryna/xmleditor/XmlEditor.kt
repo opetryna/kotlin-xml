@@ -255,14 +255,48 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
             }
         })
     }
+
+}
+
+class CommandHistory {
+
+    private val historyUndo = ArrayDeque<Command>()
+    private val historyRedo = ArrayDeque<Command>()
+
+    fun execute(cmd: Command) {
+        cmd.execute()
+        historyUndo.addLast(cmd)
+        historyRedo.clear()
+    }
+
+    fun undo() {
+        val cmd = historyUndo.removeLastOrNull()
+        if (cmd != null) {
+            cmd.undo()
+            historyRedo.addLast(cmd)
+        }
+    }
+
+    fun redo() {
+        val cmd = historyRedo.removeLastOrNull()
+        if (cmd != null) {
+            cmd.execute()
+            historyUndo.addLast(cmd)
+        }
+    }
+
+    fun clear() {
+        historyUndo.clear()
+        historyRedo.clear()
+    }
+
 }
 
 // Controller
 class DocumentView() : JFrame("XML Editor") {
 
     private var root: EntityComponent = EntityComponent(null, XmlEntity("root"))
-    private val historyUndo = ArrayDeque<Command>()
-    private val historyRedo = ArrayDeque<Command>()
+    private var commandHistory: CommandHistory = CommandHistory()
 
     val componentEventObserver = object : ComponentEvent {
 
@@ -276,8 +310,7 @@ class DocumentView() : JFrame("XML Editor") {
                     xmlText.value = oldValue
                 }
             }
-            cmd.execute()
-            historyUndo.addLast(cmd)
+            commandHistory.execute(cmd)
         }
 
         override fun appendChild(entity: XmlEntity, child: XmlNode) {
@@ -289,8 +322,7 @@ class DocumentView() : JFrame("XML Editor") {
                     entity.removeChild(child)
                 }
             }
-            cmd.execute()
-            historyUndo.addLast(cmd)
+            commandHistory.execute(cmd)
         }
 
         override fun removeNode(node: XmlNode) {
@@ -303,8 +335,7 @@ class DocumentView() : JFrame("XML Editor") {
                     parent?.appendChild(node)
                 }
             }
-            cmd.execute()
-            historyUndo.addLast(cmd)
+            commandHistory.execute(cmd)
         }
 
         override fun renameEntity(entity: XmlEntity, newName: String) {
@@ -317,8 +348,7 @@ class DocumentView() : JFrame("XML Editor") {
                     entity.name = oldName
                 }
             }
-            cmd.execute()
-            historyUndo.addLast(cmd)
+            commandHistory.execute(cmd)
         }
 
         override fun appendAttribute(entity: XmlEntity, name: String, value: String) {
@@ -330,8 +360,7 @@ class DocumentView() : JFrame("XML Editor") {
                     entity.removeAttribute(name)
                 }
             }
-            cmd.execute()
-            historyUndo.addLast(cmd)
+            commandHistory.execute(cmd)
         }
 
         override fun removeAttribute(entity: XmlEntity, name: String) {
@@ -344,8 +373,7 @@ class DocumentView() : JFrame("XML Editor") {
                     entity.appendAttribute(name, value!!)
                 }
             }
-            cmd.execute()
-            historyUndo.addLast(cmd)
+            commandHistory.execute(cmd)
         }
 
     }
@@ -353,7 +381,7 @@ class DocumentView() : JFrame("XML Editor") {
     init {
         defaultCloseOperation = JFrame.EXIT_ON_CLOSE
         size = Dimension(1000, 1000)
-
+        createMenuBar()
         root.addObserver(componentEventObserver)
         add(root)
     }
@@ -395,8 +423,7 @@ class DocumentView() : JFrame("XML Editor") {
         remove(root)
         root = v.root
         root.addObserver(componentEventObserver)
-        historyUndo.clear()
-        historyRedo.clear()
+        commandHistory.clear()
         add(root)
         revalidate()
         repaint()
@@ -405,6 +432,31 @@ class DocumentView() : JFrame("XML Editor") {
     fun open() {
         this.setLocationRelativeTo(null)
         isVisible = true
+    }
+
+    private fun createMenuBar() {
+
+        val menuBar = JMenuBar()
+
+        val fileMenu = JMenu("File")
+        val openDocument = JMenuItem("Open")
+        fileMenu.add(openDocument)
+        val saveDocument = JMenuItem("Save")
+        fileMenu.add(saveDocument)
+        val exportDocument = JMenuItem("Export")
+        fileMenu.add(exportDocument)
+        menuBar.add(fileMenu)
+
+        val editMenu = JMenu("Edit")
+        val undoCommand = JMenuItem("Undo")
+        undoCommand.addActionListener { commandHistory.undo() }
+        editMenu.add(undoCommand)
+        val redoCommand = JMenuItem("Redo")
+        redoCommand.addActionListener { commandHistory.redo() }
+        editMenu.add(redoCommand)
+        menuBar.add(editMenu)
+
+        this.jMenuBar = menuBar
     }
 
 }
