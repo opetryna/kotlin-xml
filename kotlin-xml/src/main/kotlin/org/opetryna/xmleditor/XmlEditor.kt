@@ -4,6 +4,8 @@ import org.opetryna.kotlinxml.*
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.io.*
+import java.nio.file.Paths
 import javax.swing.*
 import javax.swing.border.CompoundBorder
 
@@ -295,7 +297,8 @@ class CommandHistory {
 // Controller
 class DocumentView() : JFrame("XML Editor") {
 
-    private var root: EntityComponent = EntityComponent(null, XmlEntity("root"))
+    private var document: XmlDocument = XmlDocument(XmlEntity("root"))
+    private var root: EntityComponent = EntityComponent(null, document.root)
     private var commandHistory: CommandHistory = CommandHistory()
 
     val componentEventObserver = object : ComponentEvent {
@@ -419,6 +422,7 @@ class DocumentView() : JFrame("XML Editor") {
 
         }
 
+        this.document = document
         document.root.accept(v)
         remove(root)
         root = v.root
@@ -439,11 +443,48 @@ class DocumentView() : JFrame("XML Editor") {
         val menuBar = JMenuBar()
 
         val fileMenu = JMenu("File")
-        val openDocument = JMenuItem("Open")
-        fileMenu.add(openDocument)
+        val loadDocument = JMenuItem("Load")
+        loadDocument.addActionListener {
+            val fileDialog = FileDialog(this, "Load document", FileDialog.LOAD)
+            fileDialog.file = "*.xmlkt"
+            fileDialog.setLocationRelativeTo(this)
+            fileDialog.isVisible = true
+            val filename = Paths.get(fileDialog.directory, fileDialog.file).toString()
+            if (filename.isNotBlank()) {
+                val ois = ObjectInputStream(FileInputStream(filename))
+                ois.use { ois ->
+                    val document = ois.readObject() as XmlDocument
+                    loadDocument(document)
+                }
+            }
+        }
+        fileMenu.add(loadDocument)
         val saveDocument = JMenuItem("Save")
+        saveDocument.addActionListener {
+            val fileDialog = FileDialog(this, "Save document", FileDialog.SAVE)
+            fileDialog.file = "*.xmlkt"
+            fileDialog.setLocationRelativeTo(this)
+            fileDialog.isVisible = true
+            val filename = Paths.get(fileDialog.directory, fileDialog.file).toString()
+            if (filename.isNotBlank()) {
+                val oos = ObjectOutputStream(FileOutputStream(filename))
+                oos.use { oos ->
+                    oos.writeObject(document)
+                }
+            }
+        }
         fileMenu.add(saveDocument)
         val exportDocument = JMenuItem("Export")
+        exportDocument.addActionListener {
+            val fileDialog = FileDialog(this, "Export document", FileDialog.SAVE)
+            fileDialog.file = "*.xml"
+            fileDialog.setLocationRelativeTo(this)
+            fileDialog.isVisible = true
+            val filename = Paths.get(fileDialog.directory, fileDialog.file).toString()
+            if (filename.isNotBlank()) {
+                File(filename).writeText(this.document.serialize() + "\n", charset = Charsets.UTF_8)
+            }
+        }
         fileMenu.add(exportDocument)
         menuBar.add(fileMenu)
 
@@ -462,5 +503,6 @@ class DocumentView() : JFrame("XML Editor") {
 }
 
 fun main() {
-    // TODO
+    val dw = DocumentView()
+    dw.open()
 }
