@@ -13,18 +13,23 @@ interface Command {
 }
 
 interface ComponentEvent {
-    fun changeValue(xmlText: XmlText, newValue: String)
+    fun changeText(xmlText: XmlText, newValue: String)
     fun appendChild(entity: XmlEntity, child: XmlNode)
-    fun remove(node: XmlNode)
-    fun rename(entity: XmlEntity, newName: String)
+    fun removeNode(node: XmlNode)
+    fun renameEntity(entity: XmlEntity, newName: String)
+    fun appendAttribute(entity: XmlEntity, name: String, value: String)
+    fun removeAttribute(entity: XmlEntity, name: String)
 }
 
 class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
-    : JLabel(xmlText.value), IObservable<ComponentEvent> {
+    : JTextField(xmlText.value), IObservable<ComponentEvent> {
 
     override val observers: MutableList<ComponentEvent> = mutableListOf()
 
     init {
+        addActionListener {
+            notifyObservers { it.changeText(this.xmlText, this.text) }
+        }
         createPopupMenu()
         xmlText.addObserver(object : XmlText.Event {
             override fun valueChanged() {
@@ -32,7 +37,6 @@ class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
                 revalidate()
                 repaint()
             }
-
         })
     }
 
@@ -44,14 +48,14 @@ class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
         change.addActionListener {
             val text = JOptionPane.showInputDialog("New value")
             if (text != null && text.isNotBlank()) {
-                notifyObservers { it.changeValue(this.xmlText, text) }
+                notifyObservers { it.changeText(this.xmlText, text) }
             }
         }
         popupmenu.add(change)
 
         val remove = JMenuItem("Remove")
         remove.addActionListener {
-            notifyObservers { it.remove(this.xmlText) }
+            notifyObservers { it.removeNode(this.xmlText) }
         }
         popupmenu.add(remove)
 
@@ -64,6 +68,59 @@ class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
     }
 }
 
+class AttributesComponent(val parent: EntityComponent)
+    : JPanel(), IObservable<ComponentEvent> {
+
+    override val observers: MutableList<ComponentEvent> = mutableListOf()
+
+    private val _attributes: MutableMap<String, Triple<JLabel, JTextField, JButton>> = mutableMapOf()
+    val attributes: Map<String, Triple<JLabel, JTextField, JButton>>
+        get() = _attributes
+
+    init {
+        layout = GridLayout(0, 3)
+        border = CompoundBorder(
+            BorderFactory.createEmptyBorder(30, 10, 10, 10),
+            BorderFactory.createLineBorder(Color.BLACK, 2, true)
+        )
+    }
+
+    fun appendAttribute(name: String, value: String) {
+        val elements = attributes[name]
+        if (elements == null) {
+            val label = JLabel(name)
+            this.add(label)
+            val textField = JTextField(value)
+            textField.addActionListener {
+                notifyObservers { it.appendAttribute(parent.entity, name, textField.text) }
+            }
+            this.add(textField)
+            val deleteButton = JButton("Remove")
+            deleteButton.addActionListener {
+                notifyObservers { it.removeAttribute(parent.entity, name) }
+            }
+            this.add(deleteButton)
+            this._attributes[name] = Triple(label, textField, deleteButton)
+        } else {
+            elements.second.text = parent.entity.attributes[name]
+        }
+        revalidate()
+        repaint()
+    }
+
+    fun removeAttribute(name: String) {
+        val elements = _attributes.remove(name)
+        if (elements != null) {
+            this.remove(elements.first)
+            this.remove(elements.second)
+            this.remove(elements.third)
+        }
+        revalidate()
+        repaint()
+    }
+
+}
+
 class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
     : JPanel(), IObservable<ComponentEvent> {
 
@@ -74,6 +131,8 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
         g.font = Font("Arial", Font.BOLD, 16)
         g.drawString(entity.name, 10, 20)
     }
+
+    val attributes = AttributesComponent(this)
 
     init {
         layout = GridLayout(0, 1)
@@ -89,11 +148,13 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
             }
 
             override fun attributeAppended(attribute: String) {
-                TODO("Not yet implemented")
+                this@EntityComponent.attributes.appendAttribute(
+                    attribute, this@EntityComponent.entity.attributes[attribute]!!
+                )
             }
 
             override fun attributeRemoved(attribute: String) {
-                TODO("Not yet implemented")
+                this@EntityComponent.attributes.removeAttribute(attribute)
             }
 
             override fun childAppended(child: XmlNode) {
@@ -125,11 +186,34 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
             }
 
         })
+        add(attributes)
+    }
+
+    override fun addObserver(observer: ComponentEvent) {
+        super.addObserver(observer)
+        observers.forEach { attributes.addObserver(it) }
     }
 
     private fun createPopupMenu() {
 
         val popupmenu = JPopupMenu("Actions")
+
+        val addAttribute = JMenuItem("Append attribute")
+        addAttribute.addActionListener {
+            val nameField = JTextField(10)
+            val valueField = JTextField(10)
+            val panel = JPanel()
+            panel.layout = GridLayout(2, 2)
+            panel.add(JLabel("name:"))
+            panel.add(nameField)
+            panel.add(JLabel("value:"))
+            panel.add(valueField)
+            val result = JOptionPane.showConfirmDialog(null, panel, "Append attribute", JOptionPane.OK_CANCEL_OPTION)
+            if (result == JOptionPane.OK_OPTION && nameField.text.isNotBlank() && valueField.text.isNotBlank()) {
+                notifyObservers { it.appendAttribute(this.entity, nameField.text, valueField.text) }
+            }
+        }
+        popupmenu.add(addAttribute)
 
         val addXmlEntity = JMenuItem("Append entity")
         addXmlEntity.addActionListener {
@@ -151,7 +235,7 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
 
         val remove = JMenuItem("Remove")
         remove.addActionListener {
-            notifyObservers { it.remove(this.entity) }
+            notifyObservers { it.removeNode(this.entity) }
         }
         popupmenu.add(remove)
 
@@ -159,7 +243,7 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
         rename.addActionListener {
             val text = JOptionPane.showInputDialog("New name")
             if (text != null && text.isNotBlank()) {
-                notifyObservers { it.rename(this.entity, text) }
+                notifyObservers { it.renameEntity(this.entity, text) }
             }
         }
         popupmenu.add(rename)
@@ -182,7 +266,7 @@ class DocumentView() : JFrame("XML Editor") {
 
     val componentEventObserver = object : ComponentEvent {
 
-        override fun changeValue(xmlText: XmlText, newValue: String) {
+        override fun changeText(xmlText: XmlText, newValue: String) {
             val cmd = object : Command {
                 val oldValue = xmlText.value
                 override fun execute() {
@@ -209,7 +293,7 @@ class DocumentView() : JFrame("XML Editor") {
             historyUndo.addLast(cmd)
         }
 
-        override fun remove(node: XmlNode) {
+        override fun removeNode(node: XmlNode) {
             val cmd = object : Command {
                 val parent = node.parent
                 override fun execute() {
@@ -223,7 +307,7 @@ class DocumentView() : JFrame("XML Editor") {
             historyUndo.addLast(cmd)
         }
 
-        override fun rename(entity: XmlEntity, newName: String) {
+        override fun renameEntity(entity: XmlEntity, newName: String) {
             val cmd = object : Command {
                 val oldName = entity.name
                 override fun execute() {
@@ -231,6 +315,33 @@ class DocumentView() : JFrame("XML Editor") {
                 }
                 override fun undo() {
                     entity.name = oldName
+                }
+            }
+            cmd.execute()
+            historyUndo.addLast(cmd)
+        }
+
+        override fun appendAttribute(entity: XmlEntity, name: String, value: String) {
+            val cmd = object : Command {
+                override fun execute() {
+                    entity.appendAttribute(name, value)
+                }
+                override fun undo() {
+                    entity.removeAttribute(name)
+                }
+            }
+            cmd.execute()
+            historyUndo.addLast(cmd)
+        }
+
+        override fun removeAttribute(entity: XmlEntity, name: String) {
+            val cmd = object : Command {
+                val value = entity.attributes[name]
+                override fun execute() {
+                    entity.removeAttribute(name)
+                }
+                override fun undo() {
+                    entity.appendAttribute(name, value!!)
                 }
             }
             cmd.execute()
@@ -266,6 +377,9 @@ class DocumentView() : JFrame("XML Editor") {
                     new.addObserver(componentEventObserver)
                     current.add(new)
                     current = new
+                }
+                e.attributes.forEach { (name, value) ->
+                    current.attributes.appendAttribute(name, value)
                 }
                 return true
             }
