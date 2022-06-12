@@ -8,6 +8,20 @@ import java.io.*
 import java.nio.file.Paths
 import javax.swing.*
 import javax.swing.border.CompoundBorder
+import kotlin.reflect.KClass
+import kotlin.reflect.KMutableProperty
+import kotlin.reflect.full.*
+import kotlin.reflect.jvm.isAccessible
+
+@Target(AnnotationTarget.PROPERTY)
+annotation class Inject
+
+@Target(AnnotationTarget.PROPERTY)
+annotation class InjectAdd
+
+interface Injectable {
+    fun injectionCompleted()
+}
 
 interface Command {
     fun execute()
@@ -17,16 +31,26 @@ interface Command {
 interface ComponentEvent {
     fun changeText(xmlText: XmlText, newValue: String)
     fun appendChild(entity: XmlEntity, child: XmlNode)
-    fun removeNode(node: XmlNode)
+    fun removeChild(node: XmlNode)
     fun renameEntity(entity: XmlEntity, newName: String)
     fun appendAttribute(entity: XmlEntity, name: String, value: String)
     fun removeAttribute(entity: XmlEntity, name: String)
+    fun executeCommand(cmd: Command)
 }
 
 class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
-    : JTextField(xmlText.value), IObservable<ComponentEvent> {
+    : JTextField(xmlText.value), IObservable<ComponentEvent>, Injectable {
 
     override val observers: MutableList<ComponentEvent> = mutableListOf()
+
+    interface Action : Command {
+        val name: String
+        var textComponent: TextComponent
+    }
+
+    @InjectAdd
+    private val actions: MutableList<Action> = mutableListOf()
+    private lateinit var popupmenu: JPopupMenu
 
     init {
         addActionListener {
@@ -44,7 +68,7 @@ class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
 
     private fun createPopupMenu() {
 
-        val popupmenu = JPopupMenu("Actions")
+        popupmenu = JPopupMenu("Actions")
 
         val change = JMenuItem("Change")
         change.addActionListener {
@@ -57,7 +81,7 @@ class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
 
         val remove = JMenuItem("Remove")
         remove.addActionListener {
-            notifyObservers { it.removeNode(this.xmlText) }
+            notifyObservers { it.removeChild(this.xmlText) }
         }
         popupmenu.add(remove)
 
@@ -67,6 +91,18 @@ class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
                     popupmenu.show(this@TextComponent, e.x, e.y)
             }
         })
+    }
+
+    override fun injectionCompleted() {
+        popupmenu.addSeparator()
+        actions.forEach { action ->
+            action.textComponent = this@TextComponent
+            val menuItem = JMenuItem(action.name)
+            menuItem.addActionListener {
+                notifyObservers { it.executeCommand(action) }
+            }
+            popupmenu.add(menuItem)
+        }
     }
 }
 
@@ -124,7 +160,7 @@ class AttributesComponent(val parent: EntityComponent)
 }
 
 class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
-    : JPanel(), IObservable<ComponentEvent> {
+    : JPanel(), IObservable<ComponentEvent>, Injectable {
 
     override val observers: MutableList<ComponentEvent> = mutableListOf()
 
@@ -135,6 +171,15 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
     }
 
     val attributes = AttributesComponent(this)
+
+    interface Action : Command {
+        val name: String
+        var entityComponent: EntityComponent
+    }
+
+    @InjectAdd
+    private val actions: MutableList<Action> = mutableListOf()
+    private lateinit var popupmenu: JPopupMenu
 
     init {
         layout = GridLayout(0, 1)
@@ -161,11 +206,11 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
 
             override fun childAppended(child: XmlNode) {
                 if (child is XmlEntity) {
-                    val entityComponent = EntityComponent(this@EntityComponent, child)
+                    val entityComponent = Injector.create(EntityComponent::class, this@EntityComponent, child)
                     observers.forEach { entityComponent.addObserver(it) }
                     add(entityComponent)
                 } else if (child is XmlText) {
-                    val textComponent = TextComponent(this@EntityComponent, child)
+                    val textComponent = Injector.create(TextComponent::class, this@EntityComponent, child)
                     observers.forEach { textComponent.addObserver(it) }
                     add(textComponent)
                 }
@@ -198,7 +243,7 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
 
     private fun createPopupMenu() {
 
-        val popupmenu = JPopupMenu("Actions")
+        popupmenu = JPopupMenu("Actions")
 
         val addAttribute = JMenuItem("Append attribute")
         addAttribute.addActionListener {
@@ -237,7 +282,7 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
 
         val remove = JMenuItem("Remove")
         remove.addActionListener {
-            notifyObservers { it.removeNode(this.entity) }
+            notifyObservers { it.removeChild(this.entity) }
         }
         popupmenu.add(remove)
 
@@ -256,6 +301,18 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
                     popupmenu.show(this@EntityComponent, e.x, e.y)
             }
         })
+    }
+
+    override fun injectionCompleted() {
+        popupmenu.addSeparator()
+        actions.forEach { action ->
+            action.entityComponent = this@EntityComponent
+            val menuItem = JMenuItem(action.name)
+            menuItem.addActionListener {
+                notifyObservers { it.executeCommand(action) }
+            }
+            popupmenu.add(menuItem)
+        }
     }
 
 }
@@ -294,12 +351,56 @@ class CommandHistory {
 
 }
 
+class Injector() {
+
+    companion object {
+        
+        private val config: Map<String, String> = mutableMapOf()
+
+        fun readConfig(configFile: String) {
+            File(configFile).useLines { lines -> lines.forEach {
+                val entry = it.split("=")
+                (config as MutableMap)[entry[0]] = entry[1]
+            } }
+        }
+
+        fun <T:Any> create(c: KClass<T>, vararg args: Any?): T {
+            val obj = c.primaryConstructor!!.call(*args)
+            c.declaredMemberProperties.filter { it.hasAnnotation<Inject>() }.forEach {
+                val className = config["${c.simpleName}.${it.name}"]
+                if (className != null) {
+                    val instance = Class.forName(className).kotlin.createInstance()
+                    it.isAccessible = true
+                    (it as KMutableProperty<*>).setter.call(obj, instance)
+                }
+            }
+            c.declaredMemberProperties.filter { it.hasAnnotation<InjectAdd>() }.forEach {
+                val classNames = config["${c.simpleName}.${it.name}"]
+                classNames?.split(",")?.forEach { className ->
+                    val instance = Class.forName(className).kotlin.createInstance()
+                    it.isAccessible = true
+                    (it.call(obj) as MutableList<Any>).add(instance)
+                }
+            }
+            c.declaredFunctions.forEach {
+                if (it.name == "injectionCompleted") {
+                    it.call(obj)
+                }
+            }
+            return obj
+        }
+    }
+
+}
+
 // Controller
 class DocumentView() : JFrame("XML Editor") {
 
+    private val commandHistory: CommandHistory = CommandHistory()
+
     private var document: XmlDocument = XmlDocument(XmlEntity("root"))
-    private var root: EntityComponent = EntityComponent(null, document.root)
-    private var commandHistory: CommandHistory = CommandHistory()
+    private var root: EntityComponent = Injector.create(EntityComponent::class, null, document.root)
+
 
     val componentEventObserver = object : ComponentEvent {
 
@@ -328,7 +429,7 @@ class DocumentView() : JFrame("XML Editor") {
             commandHistory.execute(cmd)
         }
 
-        override fun removeNode(node: XmlNode) {
+        override fun removeChild(node: XmlNode) {
             val cmd = object : Command {
                 val parent = node.parent
                 override fun execute() {
@@ -379,6 +480,10 @@ class DocumentView() : JFrame("XML Editor") {
             commandHistory.execute(cmd)
         }
 
+        override fun executeCommand(cmd: Command) {
+            commandHistory.execute(cmd)
+        }
+
     }
 
     init {
@@ -393,18 +498,18 @@ class DocumentView() : JFrame("XML Editor") {
 
         val v = object : XmlVisitor {
 
-            val root = EntityComponent(null, document.root)
+            val root = Injector.create(EntityComponent::class, null, document.root)
             var current = root
 
             override fun visit(e: XmlText) {
-                val new = TextComponent(current, e)
+                val new = Injector.create(TextComponent::class, current, e)
                 new.addObserver(componentEventObserver)
                 current.add(new)
             }
 
             override fun visit(e: XmlEntity): Boolean {
                 if (e != root.entity) {
-                    val new = EntityComponent(current, e)
+                    val new = Injector.create(EntityComponent::class, current, e)
                     new.addObserver(componentEventObserver)
                     current.add(new)
                     current = new
@@ -503,6 +608,7 @@ class DocumentView() : JFrame("XML Editor") {
 }
 
 fun main() {
+    Injector.readConfig("XmlEditor.conf")
     val dw = DocumentView()
     dw.open()
 }
