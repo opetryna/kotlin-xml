@@ -34,6 +34,7 @@ interface ComponentEvent {
     fun removeChild(node: XmlNode)
     fun renameEntity(entity: XmlEntity, newName: String)
     fun appendAttribute(entity: XmlEntity, name: String, value: String)
+    fun updateAttribute(entity: XmlEntity, name: String, value: String)
     fun removeAttribute(entity: XmlEntity, name: String)
     fun executeCommand(cmd: Command)
 }
@@ -107,13 +108,27 @@ class TextComponent(private val parent: EntityComponent, val xmlText: XmlText)
 }
 
 class AttributesComponent(val parent: EntityComponent)
-    : JPanel(), IObservable<ComponentEvent> {
+    : JPanel(), IObservable<ComponentEvent>, Injectable {
 
     override val observers: MutableList<ComponentEvent> = mutableListOf()
 
-    private val _attributes: MutableMap<String, Triple<JLabel, JTextField, JButton>> = mutableMapOf()
-    val attributes: Map<String, Triple<JLabel, JTextField, JButton>>
+    private val _attributes: MutableMap<String, Triple<JLabel, AttributeViewTemplate.AttributeView, JButton>> = mutableMapOf()
+    val attributes: Map<String, Triple<JLabel, AttributeViewTemplate.AttributeView, JButton>>
         get() = _attributes
+
+    interface AttributeViewTemplate {
+        var attributesComponent: AttributesComponent
+        val entityName: String?
+        val attributeName: String?
+        interface AttributeView {
+            val component: JComponent
+            fun updateValue(value: String)
+        }
+        fun create(name: String, value: String): AttributeView
+    }
+
+    @InjectAdd
+    private val views: MutableList<AttributeViewTemplate> = mutableListOf()
 
     init {
         layout = GridLayout(0, 3)
@@ -128,19 +143,23 @@ class AttributesComponent(val parent: EntityComponent)
         if (elements == null) {
             val label = JLabel(name)
             this.add(label)
-            val textField = JTextField(value)
-            textField.addActionListener {
-                notifyObservers { it.appendAttribute(parent.entity, name, textField.text) }
+            var viewTemplate: AttributeViewTemplate = views.last()
+            views.forEach {
+                if (it.entityName == this.parent.entity.name && it.attributeName == name) {
+                    viewTemplate = it
+                    return@forEach
+                }
             }
-            this.add(textField)
+            val view = viewTemplate.create(name, value)
+            this.add(view.component)
             val deleteButton = JButton("Remove")
             deleteButton.addActionListener {
                 notifyObservers { it.removeAttribute(parent.entity, name) }
             }
             this.add(deleteButton)
-            this._attributes[name] = Triple(label, textField, deleteButton)
+            this._attributes[name] = Triple(label, view, deleteButton)
         } else {
-            elements.second.text = parent.entity.attributes[name]
+            elements.second.updateValue(parent.entity.attributes[name]!!)
         }
         revalidate()
         repaint()
@@ -150,11 +169,32 @@ class AttributesComponent(val parent: EntityComponent)
         val elements = _attributes.remove(name)
         if (elements != null) {
             this.remove(elements.first)
-            this.remove(elements.second)
+            this.remove(elements.second.component)
             this.remove(elements.third)
         }
         revalidate()
         repaint()
+    }
+
+    override fun injectionCompleted() {
+        views.add(object : AttributeViewTemplate {
+            override var attributesComponent = this@AttributesComponent
+            override val entityName: String? = null
+            override val attributeName: String? = null
+            override fun create(name: String, value: String): AttributeViewTemplate.AttributeView {
+                val textField = JTextField(value)
+                textField.addActionListener {
+                    notifyObservers { it.updateAttribute(parent.entity, name, textField.text) }
+                }
+                return object : AttributeViewTemplate.AttributeView {
+                    override val component: JTextField = textField
+                    override fun updateValue(value: String) {
+                        component.text = value
+                    }
+                }
+            }
+        })
+        views.forEach { it.attributesComponent = this@AttributesComponent }
     }
 
 }
@@ -170,7 +210,7 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
         g.drawString(entity.name, 10, 20)
     }
 
-    val attributes = AttributesComponent(this)
+    val attributes = Injector.create(AttributesComponent::class, this)
 
     interface Action : Command {
         val name: String
@@ -462,6 +502,19 @@ class DocumentView() : JFrame("XML Editor") {
                 }
                 override fun undo() {
                     entity.removeAttribute(name)
+                }
+            }
+            commandHistory.execute(cmd)
+        }
+
+        override fun updateAttribute(entity: XmlEntity, name: String, value: String) {
+            val cmd = object : Command {
+                val oldValue = entity.attributes[name]
+                override fun execute() {
+                    entity.appendAttribute(name, value)
+                }
+                override fun undo() {
+                    entity.appendAttribute(name, oldValue!!)
                 }
             }
             commandHistory.execute(cmd)
