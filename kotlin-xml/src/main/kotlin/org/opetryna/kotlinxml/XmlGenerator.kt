@@ -7,17 +7,32 @@ import kotlin.reflect.full.findAnnotation
 import kotlin.reflect.full.hasAnnotation
 
 @Target(AnnotationTarget.CLASS, AnnotationTarget.PROPERTY)
+/**
+ * Use this name instead of the declared property name.
+ */
 annotation class XmlName(val name: String)
 
 @Target(AnnotationTarget.PROPERTY)
+/**
+ * The property will be represented as an XML attribute.
+ */
 annotation class XmlAttribute
 
 @Target(AnnotationTarget.CLASS)
+/**
+ * The property will be represented as an XmlText node.
+ */
 annotation class XmlString
 
 @Target(AnnotationTarget.PROPERTY)
+/**
+ * The property will not be included in the XML model.
+ */
 annotation class XmlIgnore
 
+/**
+ * Presents functions for generating new XmlEntities.
+ */
 class XmlGenerator {
 
     companion object {
@@ -50,6 +65,14 @@ class XmlGenerator {
             return name
         }
 
+        /**
+         * Generates an XML representation of the given object.
+         *
+         * @param o Object to be represented in XML.
+         * @param name XmlEntity name of the object.
+         *
+         * @return XmlEntity structure.
+         */
         fun generate(o: Any, name: String = retrieveClassName(o::class)): XmlEntity {
 
             fun processObject(o: Any, parent: XmlEntity) {
@@ -100,6 +123,14 @@ class XmlGenerator {
             return root
         }
 
+        /**
+         * Generates a new XmlEntity structure based on the given filtration criteria.
+         *
+         * @param src Source XmlEntity
+         * @param accept Acceptation criteria function.
+         *
+         * @return Filtered XmlEntity structure.
+         */
         fun filter(src: XmlEntity, accept: (XmlNode) -> Boolean): XmlEntity? {
 
             val v = object : XmlVisitor {

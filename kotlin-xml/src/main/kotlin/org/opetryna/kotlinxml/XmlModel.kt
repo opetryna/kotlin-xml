@@ -17,19 +17,50 @@ private fun escapeValue(s: String): String {
             .replace("'", "&apos;")
 }
 
+/**
+ * Interface for traversal of the XML data structure.
+ */
 interface XmlVisitor {
+    /**
+     * Called when an XmlText node is entered.
+     */
     fun visit(e: XmlText) {}
+
+    /**
+     * Called when an XmlEntity node is entered.
+     *
+     * @return True if visit the children, False if stop.
+     */
     fun visit(e: XmlEntity): Boolean = true
+
+    /**
+     * Called when an XmlEntity node is exited.
+     */
     fun endVisit(e: XmlEntity) {}
 }
 
+/**
+ * Represents an abstract XML node.
+ *
+ * @property parent Parent XmlEntity of this node.
+ */
 abstract class XmlNode : java.io.Serializable {
 
     var parent: XmlEntity? = null
         internal set
 
+    /**
+     * Runs an XmlVisitor through the data structure.
+     */
     abstract fun accept(v: XmlVisitor)
 
+    /**
+     * Retrieves all contained XmlNodes matching the given criteria.
+     *
+     * @param accept Acceptation criteria function.
+     *
+     * @return All matched XmlNodes.
+     */
     fun find(accept: (XmlNode) -> Boolean): List<XmlNode> {
 
         val v = object : XmlVisitor {
@@ -54,9 +85,20 @@ abstract class XmlNode : java.io.Serializable {
 
 }
 
+/**
+ * Represents an XML text node.
+ *
+ * @property value Text contained in this node.
+ */
 class XmlText(value: String) : XmlNode(), IObservable<XmlText.Event>, java.io.Serializable {
 
+    /**
+     * Interface for listening for the changes in a XmlText node.
+     */
     interface Event {
+        /**
+         * Called when the text value is changed.
+         */
         fun valueChanged()
     }
 
@@ -82,13 +124,42 @@ class XmlText(value: String) : XmlNode(), IObservable<XmlText.Event>, java.io.Se
 
 }
 
+/**
+ * Represents an XML entity.
+ *
+ * @property name Entity name.
+ * @property attributes XML attributes of this entity.
+ * @property children Child XmlNodes of this entity.
+ */
 class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event>, java.io.Serializable {
 
+    /**
+     * Interface for listening for the changes in an XmlEntity.
+     */
     interface Event {
+        /**
+         * Called when the entity name is changed.
+         */
         fun nameChanged()
+
+        /**
+         * Called when an attribute is appended.
+         */
         fun attributeAppended(attribute: String)
+
+        /**
+         * Called when an attribute is removed.
+         */
         fun attributeRemoved(attribute: String)
+
+        /**
+         * Called when a child node is appended.
+         */
         fun childAppended(child: XmlNode)
+
+        /**
+         * Called when a child node is removed.
+         */
         fun childRemoved(child: XmlNode)
     }
 
@@ -112,16 +183,32 @@ class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event>, java.io
     val children: List<XmlNode>
         get() = _children
 
+    /**
+     * Appends an attribute.
+     *
+     * @param name Attribute name.
+     * @param value Attribute value.
+     */
     fun appendAttribute(name: String, value: String) {
         this._attributes[validateName(name)] = value
         notifyObservers { it.attributeAppended(name) }
     }
 
+    /**
+     * Removes an attribute.
+     *
+     * @param name Attribute name.
+     */
     fun removeAttribute(name: String) {
         this._attributes.remove(name)
         notifyObservers { it.attributeRemoved(name) }
     }
 
+    /**
+     * Appends a child node.
+     *
+     * @param node XmlNode to be appended as a child.
+     */
     fun appendChild(node: XmlNode) {
         node.parent?.removeChild(node)
         node.parent = this
@@ -129,6 +216,11 @@ class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event>, java.io
         notifyObservers { it.childAppended(node) }
     }
 
+    /**
+     * Removed a child node.
+     *
+     * @param node XmlNode to be removed from children.
+     */
     fun removeChild(node: XmlNode) {
         this._children.remove(node)
         node.parent = null
@@ -152,8 +244,18 @@ class XmlEntity(name: String) : XmlNode(), IObservable<XmlEntity.Event>, java.io
 
 }
 
+/**
+ * Represents an XML Document.
+ *
+ * @property root The root XmlEntity of the document.
+ */
 class XmlDocument(val root: XmlEntity) : java.io.Serializable {
 
+    /**
+     * Serializes the contained data into an XML text.
+     *
+     * @return XML text.
+     */
     fun serialize(): String {
 
         val v = object : XmlVisitor {
