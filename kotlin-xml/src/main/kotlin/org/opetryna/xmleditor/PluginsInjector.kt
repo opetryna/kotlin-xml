@@ -22,11 +22,24 @@ class Injector() {
 
         private val config: Map<String, String> = mutableMapOf()
 
-        fun readConfig(configFile: String) {
-            File(configFile).useLines { lines -> lines.forEach {
+        fun readConfig(configFile: File) {
+            configFile.useLines { lines -> lines.forEach {
                 val entry = it.split("=")
-                (config as MutableMap)[entry[0]] = entry[1]
+                if (entry.size == 2)
+                    (this.config as MutableMap)[entry[0]] = entry[1]
+                else
+                    System.err.println("Config error: $it")
             } }
+        }
+
+        fun readConfig(config: String) {
+            config.split("\n").forEach {
+                val entry = it.split("=")
+                if (entry.size == 2)
+                    (this.config as MutableMap)[entry[0]] = entry[1]
+                else
+                    System.err.println("Config error: $it")
+            }
         }
 
         fun <T:Any> create(c: KClass<T>, vararg args: Any?): T {

@@ -234,7 +234,7 @@ class XmlEditor() : JFrame("XML Editor") {
 fun main(args: Array<String>) {
     if (args.isNotEmpty()) {
         try {
-            Injector.readConfig(args[0])
+            Injector.readConfig(File(args[0]))
         } catch (e: Exception) {
             System.err.println("It was not possible to read the config.")
             e.printStackTrace()
