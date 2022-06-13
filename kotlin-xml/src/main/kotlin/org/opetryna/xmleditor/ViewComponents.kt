@@ -197,6 +197,7 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
     interface Action : Command {
         val name: String
         var entityComponent: EntityComponent
+        val isEnabled: Boolean
     }
 
     @InjectAdd
@@ -347,11 +348,13 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
         popupmenu.addSeparator()
         actions.forEach { action ->
             action.entityComponent = this@EntityComponent
-            val menuItem = JMenuItem(action.name)
-            menuItem.addActionListener {
-                notifyObservers { it.executeCommand(action) }
+            if (action.isEnabled) {
+                val menuItem = JMenuItem(action.name)
+                menuItem.addActionListener {
+                    notifyObservers { it.executeCommand(action) }
+                }
+                popupmenu.add(menuItem)
             }
-            popupmenu.add(menuItem)
         }
     }
 
