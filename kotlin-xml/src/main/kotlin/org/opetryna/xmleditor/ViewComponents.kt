@@ -1,9 +1,6 @@
 package org.opetryna.xmleditor
 
-import org.opetryna.kotlinxml.IObservable
-import org.opetryna.kotlinxml.XmlEntity
-import org.opetryna.kotlinxml.XmlNode
-import org.opetryna.kotlinxml.XmlText
+import org.opetryna.kotlinxml.*
 import java.awt.Color
 import java.awt.Font
 import java.awt.Graphics
@@ -230,15 +227,33 @@ class EntityComponent(val parent: EntityComponent?, val entity: XmlEntity)
             }
 
             override fun childAppended(child: XmlNode) {
-                if (child is XmlEntity) {
-                    val entityComponent = Injector.create(EntityComponent::class, this@EntityComponent, child)
-                    observers.forEach { entityComponent.addObserver(it) }
-                    add(entityComponent)
-                } else if (child is XmlText) {
-                    val textComponent = Injector.create(TextComponent::class, this@EntityComponent, child)
-                    observers.forEach { textComponent.addObserver(it) }
-                    add(textComponent)
+
+                val v = object : XmlVisitor {
+
+                    private var current = this@EntityComponent
+
+                    override fun visit(e: XmlText) {
+                        val textComponent = Injector.create(TextComponent::class, current, e)
+                        observers.forEach { textComponent.addObserver(it) }
+                        add(textComponent)
+                    }
+                    override fun visit(e: XmlEntity): Boolean {
+                        val entityComponent = Injector.create(EntityComponent::class, current, e)
+                        observers.forEach { entityComponent.addObserver(it) }
+                        add(entityComponent)
+                        current = entityComponent
+                        e.attributes.forEach { (name, value) ->
+                            current.attributes.appendAttribute(name, value)
+                        }
+                        return true
+                    }
+                    override fun endVisit(e: XmlEntity) {
+                        if (current.parent != null)
+                            current = current.parent!!
+                    }
                 }
+
+                child.accept(v)
                 revalidate()
                 repaint()
             }
